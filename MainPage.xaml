@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:conv="clr-namespace:StudentCabinetMVVM.Converters"
+             x:Class="StudentCabinetMVVM.MainPage"
+             x:Name="MainPageRoot"
+             Title="Особистий кабінет студента">
+
+    <ContentPage.Resources>
+        <conv:HighScoreColorConverter x:Key="HighScoreColorConverter" />
+    </ContentPage.Resources>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="12">
+
+            <Label Text="Особистий кабінет студента"
+                   FontSize="22"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center" />
+
+            <Entry Text="{Binding FullName, Mode=TwoWay}"
+                   Placeholder="ПІБ студента" />
+
+            <Entry Text="{Binding Group, Mode=TwoWay}"
+                   Placeholder="Група" />
+
+            <Label Text="{Binding AverageScore, StringFormat='Середній бал: {0:F2}'}" />
+            <Slider Minimum="0" Maximum="5"
+                    Value="{Binding AverageScore, Mode=TwoWay}" />
+
+            <Label Text="{Binding Greeting, Mode=OneWay}"
+                   FontAttributes="Bold"
+                   TextColor="{Binding AverageScore, Converter={StaticResource HighScoreColorConverter}}" />
+
+            <Button Text="Додати студента"
+                    Command="{Binding AddStudentCommand}" />
+
+            <BoxView HeightRequest="1" Color="LightGray" Margin="0,12" />
+
+            <Label Text="Список студентів" FontAttributes="Bold" FontSize="18" />
+
+            <CollectionView ItemsSource="{Binding Students}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Padding="0,6" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                            <Label Text="{Binding FullName}" Grid.Column="0" />
+                            <Label Text="{Binding Group}" Grid.Column="1" />
+                            <Label Text="{Binding AverageScore, StringFormat='{0:F2}'}" Grid.Column="2" />
+                            <Button Text="Детальніше"
+                                    Grid.Column="3"
+                                    Command="{Binding BindingContext.OpenDetailsCommand, Source={x:Reference MainPageRoot}}"
+                                    CommandParameter="{Binding .}" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

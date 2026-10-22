@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="StudentCabinetMVVM.Views.StudentDetailPage"
+             Title="Деталі студента">
+
+    <VerticalStackLayout Padding="24" Spacing="12">
+        <Label Text="Деталі студента"
+               FontSize="22"
+               FontAttributes="Bold"
+               HorizontalOptions="Center" />
+
+        <Label Text="{Binding FullName, StringFormat='ПІБ: {0}'}" />
+        <Label Text="{Binding Group, StringFormat='Група: {0}'}" />
+        <Label Text="{Binding AverageScore, StringFormat='Середній бал: {0:F2}'}" />
+
+        <Stepper Minimum="0"
+                 Maximum="5"
+                 Increment="0.5"
+                 Value="{Binding AverageScore, Mode=TwoWay}"
+                 HorizontalOptions="Start" />
+
+        <Button Text="Зберегти"
+                Command="{Binding SaveCommand}" />
+
+        <Button Text="Назад"
+                Command="{Binding GoBackCommand}" />
+    </VerticalStackLayout>
+</ContentPage>
