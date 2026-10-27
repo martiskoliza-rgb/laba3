@@ -13,6 +13,10 @@
     <ScrollView>
         <VerticalStackLayout Padding="24" Spacing="12">
 
+            <Button Text="Налаштування"
+                    Command="{Binding OpenSettingsCommand}"
+                    HorizontalOptions="End" />
+
             <Label Text="Особистий кабінет студента"
                    FontSize="22"
                    FontAttributes="Bold"
@@ -35,6 +39,13 @@
             <Button Text="Додати студента"
                     Command="{Binding AddStudentCommand}" />
 
+            <HorizontalStackLayout Spacing="12">
+                <Label Text="{Binding PendingText}"
+                       VerticalOptions="Center" />
+                <Button Text="Синхронізувати"
+                        Command="{Binding SyncCommand}" />
+            </HorizontalStackLayout>
+
             <BoxView HeightRequest="1" Color="LightGray" Margin="0,12" />
 
             <Label Text="Список студентів" FontAttributes="Bold" FontSize="18" />
@@ -42,13 +53,17 @@
             <CollectionView ItemsSource="{Binding Students}">
                 <CollectionView.ItemTemplate>
                     <DataTemplate>
-                        <Grid Padding="0,6" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
-                            <Label Text="{Binding FullName}" Grid.Column="0" />
-                            <Label Text="{Binding Group}" Grid.Column="1" />
-                            <Label Text="{Binding AverageScore, StringFormat='{0:F2}'}" Grid.Column="2" />
+                        <Grid Padding="0,6" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                            <Label Text="{Binding FullName}" Grid.Column="0" VerticalOptions="Center" />
+                            <Label Text="{Binding Group}" Grid.Column="1" VerticalOptions="Center" />
+                            <Label Text="{Binding AverageScore, StringFormat='{0:F2}'}" Grid.Column="2" VerticalOptions="Center" />
                             <Button Text="Детальніше"
                                     Grid.Column="3"
                                     Command="{Binding BindingContext.OpenDetailsCommand, Source={x:Reference MainPageRoot}}"
+                                    CommandParameter="{Binding .}" />
+                            <Button Text="Видалити"
+                                    Grid.Column="4"
+                                    Command="{Binding BindingContext.DeleteStudentCommand, Source={x:Reference MainPageRoot}}"
                                     CommandParameter="{Binding .}" />
                         </Grid>
                     </DataTemplate>

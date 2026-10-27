@@ -3,7 +3,9 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
+using StudentCabinetMVVM.Data;
 using StudentCabinetMVVM.Models;
 using StudentCabinetMVVM.Services;
 
@@ -12,8 +14,13 @@ namespace StudentCabinetMVVM.ViewModels;
 public class StudentViewModel : INotifyPropertyChanged, IQueryAttributable
 {
     private readonly IAppStateService _state;
+    private readonly IStudentRepository _repository;
+    private readonly ISyncService _sync;
+    private readonly SemaphoreSlim _loadLock = new(1, 1);
     private Student _student = new();
-    private bool _isLoading;
+    private bool _isLoaded;
+    private int _pendingCount;
+    private (int Id, double Score)? _lastSaved;
 
     public string FullName
     {
@@ -61,77 +68,122 @@ public class StudentViewModel : INotifyPropertyChanged, IQueryAttributable
     }
 
     public string Greeting => $"Студент: {FullName}, група {Group}";
+
+    public int PendingCount
+    {
+        get => _pendingCount;
+        private set
+        {
+            if (_pendingCount != value)
+            {
+                _pendingCount = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(PendingText));
+            }
+        }
+    }
+
+    public string PendingText => $"У черзі синхронізації: {PendingCount}";
+
     public ObservableCollection<Student> Students { get; } = new();
 
     public ICommand AddStudentCommand { get; }
 
     public ICommand OpenDetailsCommand { get; }
 
+    public ICommand DeleteStudentCommand { get; }
+
     public ICommand LoadCommand { get; }
 
     public ICommand OpenSettingsCommand { get; }
 
-    public StudentViewModel(IAppStateService state)
+    public ICommand SyncCommand { get; }
+
+    public StudentViewModel(IAppStateService state, IStudentRepository repository, ISyncService sync)
     {
         _state = state;
+        _repository = repository;
+        _sync = sync;
 
-        AddStudentCommand = new Command(AddStudent, CanAddStudent);
+        AddStudentCommand = new Command(async () => await AddStudentAsync(), CanAddStudent);
         OpenDetailsCommand = new Command<Student>(async (student) =>
             await OpenDetailsAsync(student));
-        LoadCommand = new Command(async () =>
-        {
-            Load();
-            await HandleDeepLinkAsync();
-        });
+        DeleteStudentCommand = new Command<Student>(async (student) =>
+            await DeleteStudentAsync(student));
+        LoadCommand = new Command(async () => await LoadAsync());
         OpenSettingsCommand = new Command(async () =>
             await Shell.Current.GoToAsync("settings"));
+        SyncCommand = new Command(async () => await SyncNowAsync());
 
-        Students.CollectionChanged += (_, _) =>
-        {
-            if (!_isLoading)
-                _state.Students = Students.ToList();
-        };
-
-        _state.StateRestored += (_, _) => Load();
+        _state.StateRestored += (_, _) => LoadDraft();
         _state.DeepLinkReceived += async (_, _) => await HandleDeepLinkAsync();
+        _sync.QueueChanged += (_, _) =>
+            MainThread.BeginInvokeOnMainThread(async () => await RefreshPendingAsync());
 
-        Load();
+        LoadDraft();
     }
 
-    private void Load()
+    private void LoadDraft()
     {
-        _isLoading = true;
+        FullName = _state.DraftFullName;
+        Group = _state.DraftGroup;
+        AverageScore = _state.DraftAverageScore;
+    }
+
+    private async Task LoadAsync()
+    {
+        await _loadLock.WaitAsync();
         try
         {
-            if (Students.Count == 0)
+            if (!_isLoaded)
             {
-                foreach (var student in _state.Students)
-                    Students.Add(student);
-            }
+                var students = await _repository.GetAllAsync();
 
-            FullName = _state.DraftFullName;
-            Group = _state.DraftGroup;
-            AverageScore = _state.DraftAverageScore;
+                Students.Clear();
+                foreach (var student in students)
+                    Students.Add(student);
+
+                _isLoaded = true;
+            }
         }
         finally
         {
-            _isLoading = false;
+            _loadLock.Release();
         }
+
+        await RefreshPendingAsync();
+        await HandleDeepLinkAsync();
     }
-    private void AddStudent()
+
+    private bool CanAddStudent() => !string.IsNullOrWhiteSpace(FullName);
+
+    private async Task AddStudentAsync()
     {
-        Students.Add(new Student
+        var student = new Student
         {
             FullName = FullName,
             Group = Group,
             AverageScore = AverageScore
-        });
+        };
+
+        await _repository.SaveAsync(student);
+        Students.Add(student);
 
         FullName = string.Empty;
         Group = string.Empty;
+
+        await AfterChangeAsync();
     }
 
-    private bool CanAddStudent() => !string.IsNullOrWhiteSpace(FullName);
+    private async Task DeleteStudentAsync(Student student)
+    {
+        if (student is null) return;
+
+        await _repository.DeleteAsync(student);
+        Students.Remove(student);
+
+        await AfterChangeAsync();
+    }
 
     private async Task OpenDetailsAsync(Student student)
     {
@@ -144,10 +196,54 @@ public class StudentViewModel : INotifyPropertyChanged, IQueryAttributable
         await Shell.Current.GoToAsync("studentdetail", parameters);
     }
 
+    public void ApplyQueryAttributes(IDictionary<string, object> query)
+    {
+        if (query.TryGetValue("UpdatedStudent", out var value)
+            && value is Student updated)
+        {
+            _ = SaveUpdatedAsync(updated);
+        }
+    }
+
+    private async Task SaveUpdatedAsync(Student updated)
+    {
+        if (_lastSaved == (updated.Id, updated.AverageScore))
+            return;
+
+        _lastSaved = (updated.Id, updated.AverageScore);
+        await _repository.SaveAsync(updated);
+
+        var index = Students.IndexOf(updated);
+        if (index >= 0)
+        {
+            Students.RemoveAt(index);
+            Students.Insert(index, updated);
+        }
+
+        await AfterChangeAsync();
+    }
+
+    private async Task AfterChangeAsync()
+    {
+        await RefreshPendingAsync();
+        _ = _sync.SyncAsync();
+    }
+
+    private async Task RefreshPendingAsync()
+    {
+        PendingCount = await _sync.GetPendingCountAsync();
+    }
+
+    private async Task SyncNowAsync()
+    {
+        await _sync.SyncAsync();
+        await RefreshPendingAsync();
+    }
+
     private async Task HandleDeepLinkAsync()
     {
         var link = _state.PendingDeepLink;
-        if (link is null || Shell.Current?.CurrentPage is null) return;
+        if (link is null || !_isLoaded || Shell.Current?.CurrentPage is null) return;
 
         _state.PendingDeepLink = null;
         Debug.WriteLine($"[DeepLink] Отримано: {link}");
@@ -178,20 +274,6 @@ public class StudentViewModel : INotifyPropertyChanged, IQueryAttributable
         catch (Exception ex)
         {
             Debug.WriteLine($"[DeepLink] Помилка навігації: {ex.Message}");
-        }
-    }
-
-    public void ApplyQueryAttributes(IDictionary<string, object> query)
-    {
-        if (query.TryGetValue("UpdatedStudent", out var value)
-            && value is Student updated)
-        {
-            var index = Students.IndexOf(updated);
-            if (index >= 0)
-            {
-                Students.RemoveAt(index);
-                Students.Insert(index, updated);
-            }
         }
     }
 
